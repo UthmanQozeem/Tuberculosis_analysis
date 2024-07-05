@@ -1,0 +1,366 @@
+---
+title: "TUBERCULOSIS_ANALYSIS_REPORT"
+author: "*By Qozeem Uthman*"
+format: 
+  dashboard
+theme: flatly
+---
+```{r setup, include=FALSE, message=FALSE}
+#Load packages
+if(!require(pacman)) install.packages("pacman")
+pacman::p_load(here, tidyverse,
+               ggplot2, plotly, reactable,
+               bslib, shiny, gapminder,
+               bsicons, reactable, htmltools,
+               highcharter, flexdashboard,
+               rnaturalearth, plotly, countrycode,
+               ggtext, sf, flextable)
+
+```
+
+
+```{r}
+# Load the data
+india_tuberculosis <- read_csv(here("data/india_tuberculosis.csv"))
+
+# Clean the data
+tuberculosis_cleaned_data <- janitor::clean_names(india_tuberculosis)
+
+tuberculosis_cleaned_data1 <- tuberculosis_cleaned_data %>% select(age,employment,alcohol,smoking,bmi,form_of_tb,chext_xray,health_sys_delay_in_days,treatment_initiation_delay_in_days) %>% head(10)
+
+
+# Define custom colors
+my_colours <- c("#887F56", "#7194B0", "#8D849F", "#9D6B5B", "#505375")
+
+# Categorize Age
+age_data <- tuberculosis_cleaned_data %>%
+  mutate(age_group = case_when(
+    age >= 10 & age <= 35 ~ "10-35",
+    age >= 36 & age <= 50 ~ "36-50",
+    age >= 51 & age <= 80 ~ "51-80",
+    age >= 81 ~ "80+"
+  )) %>%
+  mutate(age_group = as.factor(age_group))
+
+age_group_counts <- age_data %>%
+  filter(!is.na(age_group)) %>%
+  count(age_group)
+
+#age_group <- flextable(age_group_counts)
+
+# Visualize age groups with a pie chart
+age_group_pie <- age_group_counts %>%
+  plot_ly(labels = ~age_group, values = ~n, marker = list(colors = my_colours)) %>%
+  add_pie(hole = 0.4) %>% 
+  layout(showlegend = FALSE)
+
+# Convert height to meters and calculate BMI
+bmi_cal <- tuberculosis_cleaned_data %>%
+  mutate(height_m = htin_cms / 100) %>%
+  mutate(bmi = wtin_kgs / (height_m^2))
+
+# Categorize BMI
+bmi_categ <- bmi_cal %>%
+  mutate(bmi_categories = case_when(
+    bmi < 18.5 ~ "Underweight",
+    bmi >= 18.5 & bmi <= 24.9 ~ "Healthy",
+    bmi >= 25 & bmi <= 29.9 ~ "Overweight",
+    bmi >= 30 ~ "Obese"
+  )) %>%
+  mutate(bmi_categories = as.factor(bmi_categories))
+
+# Calculate total costs
+total_cost <- tuberculosis_cleaned_data %>%
+  mutate(total_costs = rowSums(select(., first_visit_cost, second_visit_cost, third_visit_cost), na.rm = TRUE))
+
+# Plot total costs vs treatment initiation delay
+total_costs_plot <- total_cost %>%
+  select(id, total_costs, treatment_initiation_delay_in_days)
+
+plot2 <- ggplot(total_costs_plot) +
+  aes(x = treatment_initiation_delay_in_days, y = total_costs) +
+  geom_point(shape = "circle", size = 1.5, colour = "#112446") +
+  theme_minimal()
+
+plot1<-ggplotly(plot2)
+
+employment_counts <- tuberculosis_cleaned_data %>%
+  filter(!is.na(employment)) %>%  # Filter out NAs in employment
+  group_by(employment) %>%
+  summarise(count = n()) %>%
+  mutate(employment = factor(employment, levels = c("Working", "Non - Working")))
+
+# Extract and print counts for "Working" and "Non-working"
+working_count <- employment_counts %>% filter(employment == "Working") %>% pull(count)
+non_working_count <- employment_counts %>% filter(employment == "Non - Working") %>% pull(count)
+
+# Gender counts
+gender_counts <- tuberculosis_cleaned_data %>%
+  filter(!is.na(sex)) %>%
+  group_by(sex) %>%
+  summarise(Count = n())
+
+# Separate counts for males and females
+male_count <- gender_counts %>% filter(sex == "Male") %>% pull(Count)
+female_count <- gender_counts %>% filter(sex == "Female") %>% pull(Count)
+
+# Define custom colors
+colours <- c("#263131","#684B61")
+
+# Bar chart for Alcohol Consumption
+alcohol_dist1 <- tuberculosis_cleaned_data %>%
+  filter(!is.na(alcohol)) %>%
+  count(alcohol) %>%
+  ggplot(aes(x = alcohol, y = n, fill = alcohol, text = paste(alcohol, n))) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = colours) +
+  labs(y = "Count")+
+  theme_minimal()+   
+  theme(panel.grid = element_blank()) +
+  labs(x = NULL, y = NULL)  # Remove x and y axis titles
+  
+# Convert to interactive plotly plot
+alcohol_dist<-ggplotly(alcohol_dist1, tooltip = "text")
+
+# Modify the plotly object to customize hover behavior
+alcohol_bar_plotly <- alcohol_dist %>% 
+  layout(hoverlabel = list(bgcolor = "white", bordercolor = "black"))%>%     layout(showlegend = FALSE)
+
+# Bar chart for Smoking
+smoking_dist1 <- tuberculosis_cleaned_data %>%
+  filter(!is.na(smoking)) %>%
+  count(smoking) %>%
+  ggplot(aes(x = smoking, y = n, fill = smoking,text = paste(smoking, n))) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = colours) +
+  labs(y = "Count")+
+  theme_minimal()+   
+  theme(panel.grid = element_blank()) +
+  labs(x = NULL, y = NULL)  # Remove x and y axis titles
+
+# Convert to interactive plotly plot
+smoking_dist<-ggplotly(smoking_dist1, tooltip = "text")
+
+# Modify the plotly object to customize hover behavior
+smoking_bar_plotly <- smoking_dist %>% 
+  layout(hoverlabel = list(bgcolor = "white", bordercolor = "black"))%>%     layout(showlegend = FALSE)
+
+
+# Pie chart for BMI Distribution
+bmi_dist <- bmi_categ %>%
+  filter(!is.na(bmi_categories)) %>%
+  count(bmi_categories) %>%
+  plot_ly(labels = ~bmi_categories, values = ~n, marker = list(colors = my_colours)) %>%
+  add_pie(hole = 0.4)%>%
+  layout(showlegend = FALSE)
+
+my_col <- c("#335282", "#797089", "#7986CB","#9D6B5B")
+# Pie chart for Form of TB
+tb_form_dist <- tuberculosis_cleaned_data %>%
+  filter(!is.na(form_of_tb)) %>%
+  count(form_of_tb) %>%
+  plot_ly(labels = ~form_of_tb, values = ~n, marker = list(colors = my_col)) %>%
+  add_pie(hole = 0.4) %>%
+  layout(showlegend = FALSE)
+
+# Health System Delay
+sys_delay_dist <- tuberculosis_cleaned_data %>%
+  filter(!is.na(health_sys_delay_in_days)) %>%
+  ggplot(aes(x = health_sys_delay_in_days)) +
+  geom_histogram(binwidth = 5, fill = my_colours[1], alpha = 0.7) +
+  theme_minimal() +  # Use minimal theme
+  theme(panel.grid = element_blank()) +
+  labs(x = NULL, y = NULL)  # Remove x and y axis titles
+
+# Convert to interactive plotly plot
+sys_delay_plotly <- ggplotly(sys_delay_dist)
+
+# Treatment Initiation Delay
+treatment_delay_dist <- tuberculosis_cleaned_data %>%
+  filter(!is.na(treatment_initiation_delay_in_days)) %>%
+  ggplot(aes(x = treatment_initiation_delay_in_days)) +
+  geom_histogram(binwidth = 5, fill = my_colours[2], alpha = 0.7) +
+  theme_minimal() +  # Use minimal theme
+  theme(panel.grid = element_blank()) +
+  labs(x = NULL, y = NULL)
+
+# Convert to interactive plotly plot
+treatment_delay_plotly <- ggplotly(treatment_delay_dist)
+
+chext_xray_counts <- tuberculosis_cleaned_data %>%
+  filter(!is.na(chext_xray)) %>%
+  count(chext_xray)
+
+# Visualize chext_xray with a pie chart
+chext_xray_pie <- chext_xray_counts %>%
+  plot_ly(labels = ~chext_xray, values = ~n, textinfo = 'label+percent', marker = list(colors = my_colours))%>%
+  add_pie(hole = 0.4) %>%
+  layout(showlegend = FALSE)
+
+# Mutate the education column to shorten the responses
+education_shortened <- tuberculosis_cleaned_data %>%
+  mutate(education_category = case_when(
+    education %in% c("Middle", "Primary") ~ "Primary",
+    education %in% c("Secondary", "Higher Secondary") ~ "Higher",
+    education %in% c("Graduate", "Graduate & Above") ~ "Graduate",
+    education %in% c("No Education", "Missing") ~ "No Education",
+    TRUE ~ as.character(education)
+  ))
+
+# Calculate the distribution for education excluding NAs
+education_counts <- education_shortened %>%
+  filter(!is.na(education_category)) %>%
+  count(education_category)
+
+# Create custom hover text
+education_counts <- education_counts %>%
+  mutate(hover_text = paste(education_category, n))
+
+# Visualize education with a line graph
+education_bar <- education_counts %>%
+  ggplot(aes(x = education_category, y = n, text = hover_text, fill = education_category)) +
+  geom_bar(stat = "identity", color = "black", show.legend = FALSE) +
+  scale_fill_manual(values = my_colours) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), plot.title = element_blank()) +
+  labs(x = NULL, y = NULL)  # Remove x and y axis titles
+
+# Convert to interactive plotly plot
+education_bar_plotly <- ggplotly(education_bar, tooltip = c("text")) %>%
+  layout(showlegend = FALSE)
+```
+
+# DEMOGRAPHY
+
+## Row 1 {height=20%}
+```{r}
+value_box(
+  title = "Male",
+  value = male_count,
+  showcase = bsicons::bs_icon("person-fill"),
+  theme = value_box_theme(bg = "#887F56"))
+```
+
+```{r}
+value_box(
+  title = "Female",
+  value = female_count,
+  showcase = bsicons::bs_icon("person-heart"),
+  theme = value_box_theme(bg = "#7194B0"))
+```
+
+```{r}
+value_box(
+  title = "Working",
+  value = working_count,
+  showcase = bsicons::bs_icon("stickies-fill"),
+  theme = value_box_theme(bg = "#797089")
+)
+```
+
+```{r}
+value_box(
+  title = "Non_working",
+  value = non_working_count,
+  showcase = bsicons::bs_icon("sticky"),
+  theme = value_box_theme(bg = "#9D6B5B")
+)
+```
+
+## Row 2 {height=80%}
+
+### {width=35%}
+```{r title = "Alcohol status"}
+alcohol_bar_plotly
+```
+
+```{r title = "Smoking status"}
+smoking_bar_plotly
+```
+
+### {width=30%}
+```{r title = "Age Distribution"}
+age_group_pie
+```
+
+### {width=35%}
+```{r title = "Education"}
+education_bar_plotly
+```
+
+# TUBERCULOSIS DETAILS
+
+## Row 1 {height=25%}
+
+```{r title = "Form of Tuberculosis"}
+tb_form_dist
+```
+
+## Row 2 {height=75%}
+
+### {width=30%}
+
+```{r title = "Chest Xray"}
+chext_xray_pie
+```
+
+```{r title = "BMI Distribution"}
+bmi_dist
+```
+
+### {width=50%}
+
+```{r title = "Health System Delay"}
+sys_delay_plotly
+```
+
+```{r title = "Health Treatment Delay"}
+treatment_delay_plotly
+```
+
+## {.sidebar width=20%}
+
+Basic information about TB and Future research we can explore:
+
+### Introduction
+Tuberculosis (TB) is a highly contagious infectious disease caused by the bacterium Mycobacterium tuberculosis. It predominantly affects the lungs but can also spread to other organs. TB is one of the top ten causes of death worldwide, particularly impacting low- and middle-income countries (World Health Organization, 2021).
+
+**Causes**
+TB spreads through airborne particles when an infected person coughs, sneezes, or speaks. Factors contributing to TB infection include prolonged close contact with TB patients, a weakened immune system (e.g., due to HIV/AIDS or malnutrition), and living in overcrowded or unsanitary conditions (Centers for Disease Control and Prevention, 2021).
+
+**Symptoms**
+The symptoms of TB vary but commonly include a persistent cough lasting more than three weeks, chest pain, and coughing up blood. Other symptoms are fever, night sweats, fatigue, and significant weight loss. Extrapulmonary TB, which affects organs outside the lungs, can cause additional symptoms depending on the organs involved (Mayo Clinic, 2021).
+
+**Remedy**
+TB treatment requires a long-term course of multiple antibiotics, typically lasting six to nine months. The most common medications include isoniazid, rifampicin, ethambutol, and pyrazinamide. Adhering to the treatment regimen is crucial to prevent the development of drug-resistant TB strains (World Health Organization, 2021).
+
+### Future Research
+Future TB research aims to develop shorter, more effective treatment regimens, new vaccines, and rapid diagnostic tools. There is also a focus on understanding the genetic mechanisms of TB to create targeted therapies and improve prevention strategies, particularly in high-risk populations (National Institutes of Health, 2021).
+
+### References
+*Centers for Disease Control and Prevention. (2021). Tuberculosis (TB). Retrieved from https://www.cdc.gov/tb/default.html* 
+
+*Mayo Clinic. (2021). Tuberculosis. Retrieved from https://www.mayoclinic.org/diseases-conditions/tuberculosis/symptoms-causes/syc-20351250* 
+
+*National Institutes of Health. (2021). Tuberculosis research. Retrieved from https://www.niaid.nih.gov/diseases-conditions/tuberculosis*
+
+*World Health Organization. (2021). Tuberculosis. Retrieved from https://www.who.int/news-room/fact-sheets/detail/tuberculosis* 
+
+
+# DOWNLOAD DATA
+
+The subset of the raw data used in this dashboard is shown below and can be downloaded as a csv
+
+```{r}
+htmltools::browsable(
+  tagList(
+    reactable(tuberculosis_cleaned_data1,
+              elementId = "tuberculosis_cleaned_data1",
+              searchable = TRUE,
+              filterable = TRUE),
+    tags$button("Download as CSV",
+                onclick = "Reactable.downloadDataCSV('tuberculosis_cleaned_data1')")
+  )
+)
+
+```
